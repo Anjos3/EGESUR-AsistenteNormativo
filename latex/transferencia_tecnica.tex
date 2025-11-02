@@ -1,0 +1,384 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+
+\geometry{a4paper, margin=2.5cm}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{EGESUR - Asistente Normativo}
+\lhead{Documento de Transferencia Técnica}
+\rfoot{\thepage}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+\title{\textbf{Documento de Transferencia Técnica}\\
+\large API de Normativas EGESUR\\
+\small Asistente Normativo con Búsqueda Semántica}
+\author{Consultoría de Desarrollo\\EGESUR - Empresa de Generación Eléctrica del Sur S.A.}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+Este documento describe la arquitectura, configuración y operación del sistema de API REST para consulta de normativas de EGESUR. El sistema utiliza búsqueda semántica con embeddings de OpenAI para localizar información relevante en documentos PDF almacenados en Google Drive, diseñado para integración con ChatGPT Custom Actions.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+\section{Resumen Ejecutivo}
+
+\subsection{Propósito del Sistema}
+El \textbf{Asistente Normativo EGESUR} es una API REST desarrollada con FastAPI que permite realizar búsquedas semánticas sobre documentos normativos (PDF, DOCX, Google Docs) almacenados en Google Drive. El sistema:
+
+\begin{itemize}
+    \item Extrae texto automáticamente de documentos
+    \item Genera embeddings vectoriales usando OpenAI API
+    \item Realiza búsquedas semánticas por similitud de coseno
+    \item Persiste embeddings en PostgreSQL para optimizar tiempos de respuesta
+    \item Se integra con ChatGPT como Custom Action
+\end{itemize}
+
+\subsection{Tecnologías Principales}
+\begin{itemize}
+    \item \textbf{Framework:} FastAPI (Python 3.12)
+    \item \textbf{Base de Datos:} PostgreSQL (persistencia de embeddings)
+    \item \textbf{Almacenamiento:} Google Drive API
+    \item \textbf{IA:} OpenAI text-embedding-3-small
+    \item \textbf{Despliegue:} Railway/Render (PaaS)
+\end{itemize}
+
+\section{Arquitectura del Sistema}
+
+\subsection{Componentes Principales}
+
+\begin{tcolorbox}[colback=blue!5!white,colframe=blue!75!black,title=Diagrama de Arquitectura]
+\begin{verbatim}
+┌─────────────┐       ┌──────────────┐       ┌──────────────┐
+│   ChatGPT   │──────>│   FastAPI    │──────>│ Google Drive │
+│   Custom    │       │   (main.py)  │       │  (PDFs/DOCX) │
+│   Action    │<──────│              │<──────│              │
+└─────────────┘       └──────────────┘       └──────────────┘
+                            │    │
+                            │    └──────────>┌──────────────┐
+                            │                │   OpenAI     │
+                            │                │  Embeddings  │
+                            │<───────────────│              │
+                            │                └──────────────┘
+                            │
+                            v
+                      ┌──────────────┐
+                      │  PostgreSQL  │
+                      │  (document_  │
+                      │   chunks)    │
+                      └──────────────┘
+\end{verbatim}
+\end{tcolorbox}
+
+\subsection{Flujo de Datos}
+
+\subsubsection{Primera Ejecución (Precalentamiento)}
+\begin{enumerate}
+    \item Llamada a \texttt{/api/warmup}
+    \item Descarga todos los PDFs de Google Drive
+    \item Extrae texto con PyPDF2 y python-docx
+    \item Divide en chunks de ~3000 caracteres
+    \item Genera embeddings con OpenAI (1536 dimensiones)
+    \item Guarda en PostgreSQL + caché en memoria
+    \item \textbf{Tiempo:} 10-15 minutos (solo primera vez)
+\end{enumerate}
+
+\subsubsection{Búsqueda de Usuario}
+\begin{enumerate}
+    \item Consulta a \texttt{/api/buscarNormativa?termino=emergencia}
+    \item Genera embedding del término de búsqueda
+    \item Calcula similitud de coseno con chunks en caché
+    \item Retorna top 10 chunks más relevantes
+    \item \textbf{Tiempo:} < 10 segundos
+\end{enumerate}
+
+\subsubsection{Reinicio del Servicio}
+\begin{enumerate}
+    \item Evento \texttt{startup} carga chunks desde PostgreSQL
+    \item Pobla caché en memoria
+    \item Servicio listo
+    \item \textbf{Tiempo:} 2-5 segundos
+\end{enumerate}
+
+\section{Configuración y Despliegue}
+
+\subsection{Variables de Entorno}
+
+Configurar las siguientes variables en la plataforma de despliegue:
+
+\begin{lstlisting}[language=bash, caption=Variables de entorno requeridas]
+# Google Drive
+FOLDER_ID=<ID_carpeta_Google_Drive>
+GOOGLE_CREDENTIALS_BASE64=<credenciales_service_account_base64>
+
+# OpenAI
+OPENAI_API_KEY=sk-proj-...
+
+# PostgreSQL
+DATABASE_URL=postgresql://user:pass@host:5432/database
+
+# Opcional para desarrollo local
+GOOGLE_APPLICATION_CREDENTIALS=credenciales.json
+\end{lstlisting}
+
+\subsection{Despliegue en Railway/Render}
+
+\subsubsection{Paso 1: Crear Servicio Web}
+\begin{enumerate}
+    \item Conectar repositorio GitHub
+    \item Configurar build command: \texttt{pip install -r requirements.txt}
+    \item Configurar start command: \texttt{uvicorn src.main:app --host 0.0.0.0 --port \$PORT}
+    \item Python version: 3.12.3 (ver \texttt{runtime.txt})
+\end{enumerate}
+
+\subsubsection{Paso 2: Crear PostgreSQL}
+\begin{enumerate}
+    \item Crear base de datos PostgreSQL (plan gratuito: 256 MB)
+    \item Copiar Internal Database URL
+    \item Agregar como variable de entorno \texttt{DATABASE_URL}
+\end{enumerate}
+
+\subsubsection{Paso 3: Configurar Credenciales}
+\begin{enumerate}
+    \item Google Service Account: Codificar JSON en base64
+    \begin{lstlisting}[language=bash]
+base64 -w 0 credenciales.json
+    \end{lstlisting}
+    \item Agregar como \texttt{GOOGLE\_CREDENTIALS\_BASE64}
+    \item OpenAI: Obtener API key de \url{https://platform.openai.com}
+\end{enumerate}
+
+\subsubsection{Paso 4: Primera Ejecución}
+\begin{lstlisting}[language=bash]
+# Precalentar cache (solo una vez)
+curl -X GET "https://tu-servicio.onrender.com/api/warmup"
+
+# Verificar estado
+curl "https://tu-servicio.onrender.com/api/debug/cache-status"
+\end{lstlisting}
+
+\section{Operación y Mantenimiento}
+
+\subsection{Endpoints Principales}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|p{6cm}|}
+\hline
+\textbf{Endpoint} & \textbf{Método} & \textbf{Propósito} \\
+\hline
+\texttt{/api/buscarNormativa} & GET & Búsqueda semántica (termino opcional) \\
+\texttt{/api/warmup} & GET & Precargar todos los documentos \\
+\texttt{/api/refresh-cache} & POST & Actualizar caché tras cambios en Drive \\
+\texttt{/ping} & GET & Health check para uptime monitoring \\
+\texttt{/api/debug/env} & GET & Verificar configuración de variables \\
+\texttt{/api/debug/cache-status} & GET & Estado del caché \\
+\hline
+\end{tabular}
+\caption{Endpoints de la API}
+\end{table}
+
+\subsection{Tareas de Mantenimiento}
+
+\subsubsection{Actualizar Documentos en Google Drive}
+\begin{enumerate}
+    \item Subir/modificar archivos en carpeta de Google Drive
+    \item Ejecutar \texttt{POST /api/refresh-cache}
+    \item Esperar 10-15 minutos (regeneración de embeddings)
+    \item Verificar: \texttt{GET /api/debug/cache-status}
+\end{enumerate}
+
+\subsubsection{Monitoreo de Logs}
+Patrones importantes en logs:
+\begin{itemize}
+    \item \texttt{✓} = Operaciones exitosas
+    \item \texttt{⚠️} = Advertencias (funcionalidad degradada)
+    \item \texttt{✗} = Errores críticos
+    \item \texttt{🔥} = Operaciones de caché warmup
+    \item \texttt{⚡} = Búsquedas desde caché (rápidas)
+\end{itemize}
+
+\subsubsection{Rotación de Credenciales}
+\textbf{Frecuencia recomendada:} Cada 90 días
+
+\begin{enumerate}
+    \item \textbf{OpenAI API Key:}
+    \begin{itemize}
+        \item Generar nueva key en \url{https://platform.openai.com}
+        \item Actualizar variable \texttt{OPENAI\_API\_KEY}
+        \item Revocar key antigua
+    \end{itemize}
+    \item \textbf{Google Service Account:}
+    \begin{itemize}
+        \item Crear nuevo service account en Google Cloud Console
+        \item Dar permisos de lectura a carpeta de Drive
+        \item Codificar nuevo JSON en base64
+        \item Actualizar \texttt{GOOGLE\_CREDENTIALS\_BASE64}
+        \item Deshabilitar service account antigua
+    \end{itemize}
+    \item \textbf{PostgreSQL:}
+    \begin{itemize}
+        \item Cambiar contraseña en dashboard de Railway/Render
+        \item Actualizar \texttt{DATABASE\_URL} automáticamente
+    \end{itemize}
+\end{enumerate}
+
+\section{Solución de Problemas}
+
+\subsection{Problemas Comunes}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{|p{4cm}|p{4cm}|p{5cm}|}
+\hline
+\textbf{Síntoma} & \textbf{Causa} & \textbf{Solución} \\
+\hline
+Timeout en búsqueda & Caché vacío & Ejecutar \texttt{/api/warmup} \\
+\hline
+Error OpenAI & API key inválida & Verificar \texttt{OPENAI\_API\_KEY} \\
+\hline
+Sin resultados & Término muy específico & Usar términos más generales \\
+\hline
+Error PostgreSQL & DATABASE\_URL incorrecta & Copiar Internal Database URL \\
+\hline
+Error Google Drive & Credenciales expiradas & Rotar service account \\
+\hline
+\end{tabular}
+\caption{Troubleshooting}
+\end{table}
+
+\subsection{Comandos de Diagnóstico}
+
+\begin{lstlisting}[language=bash, caption=Verificación de estado del sistema]
+# Verificar que el servicio responde
+curl https://tu-servicio.onrender.com/
+
+# Verificar variables de entorno
+curl https://tu-servicio.onrender.com/api/debug/env
+
+# Verificar cache
+curl https://tu-servicio.onrender.com/api/debug/cache-status
+
+# Verificar OpenAI
+curl https://tu-servicio.onrender.com/api/debug/test-openai
+
+# Verificar Google Drive
+curl https://tu-servicio.onrender.com/api/debug/test-drive
+\end{lstlisting}
+
+\section{Estructura del Repositorio}
+
+\begin{lstlisting}[caption=Organización de archivos]
+EGESUR-AsistenteNormativo/
+├── src/
+│   ├── main.py              # API principal (1238 lineas)
+│   └── test_openai.py       # Test de conectividad OpenAI
+├── docs/
+│   ├── README.md            # Documentacion general
+│   ├── CLAUDE.md            # Guia para Claude Code
+│   └── POSTGRESQL_SETUP.md  # Setup de base de datos
+├── gpt/
+│   ├── PROMPT_OPTIMIZADO.md # Prompt del GPT personalizado
+│   └── SCHEMA_OPENAPI.md    # Schema para Custom Actions
+├── latex/
+│   └── transferencia_tecnica.tex  # Este documento
+├── .env.example             # Template de variables
+├── .gitignore               # Exclusiones de git
+├── requirements.txt         # Dependencias Python
+└── runtime.txt              # Version de Python
+\end{lstlisting}
+
+\section{Contacto y Recursos}
+
+\subsection{Documentación}
+\begin{itemize}
+    \item \textbf{README.md:} Documentación general del proyecto
+    \item \textbf{POSTGRESQL\_SETUP.md:} Guía paso a paso de configuración de PostgreSQL
+    \item \textbf{CLAUDE.md:} Guía para desarrolladores (Claude Code)
+\end{itemize}
+
+\subsection{URLs de Referencia}
+\begin{itemize}
+    \item Railway: \url{https://railway.app}
+    \item Render: \url{https://render.com}
+    \item OpenAI Platform: \url{https://platform.openai.com}
+    \item Google Cloud Console: \url{https://console.cloud.google.com}
+\end{itemize}
+
+\subsection{Requisitos de Capacidad}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Recurso} & \textbf{Recomendación} \\
+\hline
+PostgreSQL Storage & 256 MB (plan gratuito suficiente para ~70 PDFs) \\
+RAM & 512 MB mínimo \\
+CPU & 1 vCPU \\
+Ancho de banda & Ilimitado (plan Railway/Render gratuito) \\
+\hline
+\end{tabular}
+\caption{Requisitos de recursos}
+\end{table}
+
+\section{Conclusión}
+
+El sistema \textbf{Asistente Normativo EGESUR} está en producción y listo para transferencia al equipo de TI. La arquitectura de caché dual (memoria + PostgreSQL) garantiza tiempos de respuesta óptimos (<10 segundos) incluso tras reinicios del servicio.
+
+\subsection{Próximos Pasos Recomendados}
+\begin{enumerate}
+    \item Configurar monitoreo de uptime (ej: UptimeRobot)
+    \item Implementar rate limiting para proteger contra abuso
+    \item Restringir CORS a dominios específicos en producción
+    \item Documentar procedimientos operativos internos
+    \item Capacitar al equipo de TI en operación básica
+\end{enumerate}
+
+\vspace{1cm}
+\begin{center}
+\textit{Documento generado automáticamente}\\
+\textit{Versión 1.0 - \today}
+\end{center}
+
+\end{document}

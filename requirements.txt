@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+PyPDF2
+python-docx
+python-dotenv
+python-multipart
+openai>=1.0.0
+numpy
+psycopg2-binary
+sqlalchemy
