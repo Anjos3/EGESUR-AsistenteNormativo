@@ -88,24 +88,24 @@ El \textbf{Asistente Normativo EGESUR} es una API REST desarrollada con FastAPI 
 
 \begin{tcolorbox}[colback=blue!5!white,colframe=blue!75!black,title=Diagrama de Arquitectura]
 \begin{verbatim}
-┌─────────────┐       ┌──────────────┐       ┌──────────────┐
-│   ChatGPT   │──────>│   FastAPI    │──────>│ Google Drive │
-│   Custom    │       │   (main.py)  │       │  (PDFs/DOCX) │
-│   Action    │<──────│              │<──────│              │
-└─────────────┘       └──────────────┘       └──────────────┘
-                            │    │
-                            │    └──────────>┌──────────────┐
-                            │                │   OpenAI     │
-                            │                │  Embeddings  │
-                            │<───────────────│              │
-                            │                └──────────────┘
-                            │
-                            v
-                      ┌──────────────┐
-                      │  PostgreSQL  │
-                      │  (document_  │
-                      │   chunks)    │
-                      └──────────────┘
++---------------+       +----------------+       +----------------+
+|   ChatGPT     |------>|    FastAPI     |------>|  Google Drive  |
+|   Custom      |       |   (main.py)    |       |   (PDFs/DOCX)  |
+|   Action      |<------|                |<------|                |
++---------------+       +----------------+       +----------------+
+                              |    |
+                              |    +----------->+----------------+
+                              |                 |    OpenAI      |
+                              |                 |   Embeddings   |
+                              |<----------------|                |
+                              |                 +----------------+
+                              |
+                              v
+                        +----------------+
+                        |   PostgreSQL   |
+                        |  (document_    |
+                        |    chunks)     |
+                        +----------------+
 \end{verbatim}
 \end{tcolorbox}
 
@@ -147,8 +147,8 @@ Configurar las siguientes variables en la plataforma de despliegue:
 
 \begin{lstlisting}[language=bash, caption=Variables de entorno requeridas]
 # Google Drive
-FOLDER_ID=<ID_carpeta_Google_Drive>
-GOOGLE_CREDENTIALS_BASE64=<credenciales_service_account_base64>
+FOLDER_ID=tu_folder_id_aqui
+GOOGLE_CREDENTIALS_BASE64=tu_credenciales_base64_aqui
 
 # OpenAI
 OPENAI_API_KEY=sk-proj-...
@@ -230,11 +230,11 @@ curl "https://tu-servicio.onrender.com/api/debug/cache-status"
 \subsubsection{Monitoreo de Logs}
 Patrones importantes en logs:
 \begin{itemize}
-    \item \texttt{✓} = Operaciones exitosas
-    \item \texttt{⚠️} = Advertencias (funcionalidad degradada)
-    \item \texttt{✗} = Errores críticos
-    \item \texttt{🔥} = Operaciones de caché warmup
-    \item \texttt{⚡} = Búsquedas desde caché (rápidas)
+    \item \texttt{[OK]} = Operaciones exitosas
+    \item \texttt{[WARN]} = Advertencias (funcionalidad degradada)
+    \item \texttt{[ERROR]} = Errores críticos
+    \item \texttt{[WARMUP]} = Operaciones de caché warmup
+    \item \texttt{[FAST]} = Búsquedas desde caché (rápidas)
 \end{itemize}
 
 \subsubsection{Rotación de Credenciales}
@@ -308,24 +308,24 @@ curl https://tu-servicio.onrender.com/api/debug/test-drive
 
 \section{Estructura del Repositorio}
 
-\begin{lstlisting}[caption=Organización de archivos]
+\begin{lstlisting}[caption=Organizacion de archivos]
 EGESUR-AsistenteNormativo/
-├── src/
-│   ├── main.py              # API principal (1238 lineas)
-│   └── test_openai.py       # Test de conectividad OpenAI
-├── docs/
-│   ├── README.md            # Documentacion general
-│   ├── CLAUDE.md            # Guia para Claude Code
-│   └── POSTGRESQL_SETUP.md  # Setup de base de datos
-├── gpt/
-│   ├── PROMPT_OPTIMIZADO.md # Prompt del GPT personalizado
-│   └── SCHEMA_OPENAPI.md    # Schema para Custom Actions
-├── latex/
-│   └── transferencia_tecnica.tex  # Este documento
-├── .env.example             # Template de variables
-├── .gitignore               # Exclusiones de git
-├── requirements.txt         # Dependencias Python
-└── runtime.txt              # Version de Python
+|-- src/
+|   |-- main.py              (API principal - 1238 lineas)
+|   +-- test_openai.py       (Test de conectividad OpenAI)
+|-- docs/
+|   |-- README.md            (Documentacion general)
+|   |-- CLAUDE.md            (Guia para Claude Code)
+|   +-- POSTGRESQL_SETUP.md  (Setup de base de datos)
+|-- gpt/
+|   |-- PROMPT_OPTIMIZADO.md (Prompt del GPT personalizado)
+|   +-- SCHEMA_OPENAPI.md    (Schema para Custom Actions)
+|-- latex/
+|   +-- transferencia_tecnica.tex  (Este documento)
+|-- .env.example             (Template de variables)
+|-- .gitignore               (Exclusiones de git)
+|-- requirements.txt         (Dependencias Python)
++-- runtime.txt              (Version de Python)
 \end{lstlisting}
 
 \section{Contacto y Recursos}
