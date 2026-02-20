@@ -253,7 +253,7 @@ def invalidate_cache():
 
 def save_chunks_to_db(chunks: List[Dict], folder_id: str):
     """
-    Guarda chunks con embeddings en PostgreSQL.
+    Guarda chunks con embeddings en PostgreSQL en lotes pequeños.
     Primero borra los chunks existentes del folder_id, luego inserta los nuevos.
 
     Args:
@@ -264,6 +264,8 @@ def save_chunks_to_db(chunks: List[Dict], folder_id: str):
         logger.warning("⚠️ PostgreSQL no configurado - no se persistirán embeddings")
         return
 
+    BATCH_SIZE = 50  # Insertar en lotes de 50 para evitar timeouts
+
     try:
         db: Session = SessionLocal()
 
@@ -271,37 +273,46 @@ def save_chunks_to_db(chunks: List[Dict], folder_id: str):
         deleted_count = db.query(DocumentChunk).filter(
             DocumentChunk.folder_id == folder_id
         ).delete()
+        db.commit()
 
         if deleted_count > 0:
             logger.info(f"🗑️  Borrados {deleted_count} chunks antiguos de la base de datos")
 
-        # Insertar nuevos chunks
-        for chunk_data in chunks:
-            # Solo guardar si tiene embedding válido
-            if chunk_data.get('embedding') is None:
-                continue
+        # Filtrar chunks con embedding válido
+        valid_chunks = [c for c in chunks if c.get('embedding') is not None]
+        total_saved = 0
 
-            db_chunk = DocumentChunk(
-                chunk_id=chunk_data['chunk_id'],
-                text=chunk_data['text'],
-                embedding=chunk_data['embedding'],  # SQLAlchemy convierte list → JSONB
-                source_document=chunk_data['source_document'],
-                source_link=chunk_data.get('source_link', ''),
-                chunk_index=chunk_data.get('chunk_index', 0),
-                total_chunks=chunk_data.get('total_chunks', 1),
-                folder_id=folder_id
-            )
-            db.add(db_chunk)
+        # Insertar en lotes
+        for i in range(0, len(valid_chunks), BATCH_SIZE):
+            batch = valid_chunks[i:i + BATCH_SIZE]
 
-        db.commit()
-        logger.info(f"💾 Guardados {len(chunks)} chunks en PostgreSQL")
+            for chunk_data in batch:
+                db_chunk = DocumentChunk(
+                    chunk_id=chunk_data['chunk_id'],
+                    text=chunk_data['text'],
+                    embedding=chunk_data['embedding'],
+                    source_document=chunk_data['source_document'],
+                    source_link=chunk_data.get('source_link', ''),
+                    chunk_index=chunk_data.get('chunk_index', 0),
+                    total_chunks=chunk_data.get('total_chunks', 1),
+                    folder_id=folder_id
+                )
+                db.add(db_chunk)
+
+            db.commit()
+            total_saved += len(batch)
+            logger.info(f"💾 Lote guardado: {total_saved}/{len(valid_chunks)} chunks")
+
+        logger.info(f"💾 Guardados {total_saved} chunks en PostgreSQL")
         db.close()
 
     except Exception as e:
         logger.error(f"✗ Error al guardar chunks en PostgreSQL: {str(e)}")
-        if db:
+        try:
             db.rollback()
             db.close()
+        except Exception:
+            pass
 
 
 def load_chunks_from_db(folder_id: str) -> List[Dict]:
