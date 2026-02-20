@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -39,11 +40,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def api_key_middleware(request: Request, call_next):
+    """Protege todos los endpoints /api/* con API key via Bearer token."""
+    if request.url.path.startswith("/api/") and API_KEY:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "API key requerida. Usa el header: Authorization: Bearer <tu-api-key>"}
+            )
+        token = auth_header.replace("Bearer ", "")
+        if token != API_KEY:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "API key inválida"}
+            )
+    response = await call_next(request)
+    return response
+
+
 # Variables de entorno
 FOLDER_ID = os.getenv("FOLDER_ID")
 GOOGLE_CREDENTIALS_BASE64 = os.getenv("GOOGLE_CREDENTIALS_BASE64")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
+API_KEY = os.getenv("API_KEY")
 
 # Scopes necesarios para Google Drive
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']

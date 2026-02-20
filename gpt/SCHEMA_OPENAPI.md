@@ -18,8 +18,17 @@ info:
   description: API para consultar normativas y documentos técnicos de EGESUR almacenados en Google Drive. Incluye sistema de caché de 7 días para respuestas rápidas.
   version: 2.0.0
 servers:
-  - url: https://egesur-production.up.railway.app
-    description: Servidor de producción en Railway
+  - url: https://TU-URL.onrender.com
+    description: Servidor de producción en Render
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+security:
+  - BearerAuth: []
 
 paths:
   /api/buscarNormativa:
@@ -151,5 +160,7 @@ Actualiza la base de conocimiento después de modificar documentos en Google Dri
 
 ## Configuración adicional en el GPT:
 
-- **Authentication:** None (la API es pública)
+- **Authentication:** API Key
+  - **Auth Type:** Bearer
+  - **API Key:** (pegar la misma API_KEY configurada en Render)
 - **Privacy:** Según tus necesidades (Private/Company/Public)
